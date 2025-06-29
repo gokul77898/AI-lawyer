@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff, Upload } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting } from '@/ai/flows/greeting-flow';
 import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
@@ -24,6 +24,7 @@ export function VideoConsultation() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const [isStarted, setIsStarted] = useState(false);
@@ -31,26 +32,35 @@ export function VideoConsultation() {
   
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isAwaitingDocument, setIsAwaitingDocument] = useState(false);
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Function to handle the AI response and start listening again
-  const handleAiResponse = useCallback(async (query: string) => {
+  // Core function to handle conversation turns with the AI
+  const continueConsultation = useCallback(async (query: string, documentDataUri?: string) => {
     setAiStatus('processing');
+    setIsAwaitingDocument(false); // Stop waiting for a doc once we send a new request
     
-    // Construct the history from the state
     const historyForAi: LiveConsultationInput['history'] = messages.map(m => ({ role: m.role, content: m.content }));
+    
+    const input: LiveConsultationInput = { query, history: historyForAi };
+    if (documentDataUri) {
+      input.documentDataUri = documentDataUri;
+    }
 
     try {
-      const result = await liveLegalConsultation({ query, history: historyForAi });
+      const result = await liveLegalConsultation(input);
       
       if (result.media && result.text) {
-        // Add the current exchange to the history
         setMessages(prev => [
           ...prev, 
           { role: 'user', content: query },
           { role: 'model', content: result.text }
         ]);
+
+        if (result.documentRequest) {
+          setIsAwaitingDocument(true);
+        }
 
         setAiStatus('speaking');
         if(audioRef.current) {
@@ -58,7 +68,7 @@ export function VideoConsultation() {
             audioRef.current.play();
         }
       } else {
-        throw new Error('No audio received from consultation flow.');
+        throw new Error('No audio/text received from consultation flow.');
       }
     } catch (error) {
       console.error('Error during consultation:', error);
@@ -67,7 +77,7 @@ export function VideoConsultation() {
         title: 'Consultation Error',
         description: 'Sorry, I encountered an issue. Please try again.',
       });
-      setAiStatus('listening'); // Go back to listening on error
+      setAiStatus('listening');
     }
   }, [messages, toast]);
   
@@ -92,7 +102,7 @@ export function VideoConsultation() {
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       if (transcript) {
-        handleAiResponse(transcript);
+        continueConsultation(transcript);
       }
     };
     
@@ -108,41 +118,26 @@ export function VideoConsultation() {
     };
 
     recognition.onend = () => {
-      // Automatically restart recognition if we are in listening mode
       if (aiStatus === 'listening') {
-        try {
-          recognition.start();
-        } catch(e) {
-          console.error("Could not restart recognition", e);
-        }
+        try { recognition.start(); } catch(e) { console.error("Could not restart recognition", e); }
       }
     };
     
     recognitionRef.current = recognition;
 
-  }, [toast, aiStatus, handleAiResponse]);
+  }, [toast, aiStatus, continueConsultation]);
   
-  // Controls listening state based on AI status and mic toggle
   useEffect(() => {
     const recognition = recognitionRef.current;
     if (!recognition) return;
 
     if (aiStatus === 'listening' && isMicOn) {
-      try {
-        recognition.start();
-      } catch (e) {
-        // May fail if already started, which is fine.
-      }
+      try { recognition.start(); } catch (e) { /* May fail if already started */ }
     } else {
-       try {
-        recognition.stop();
-      } catch (e) {
-        // May fail if already stopped
-      }
+       try { recognition.stop(); } catch (e) { /* May fail if already stopped */ }
     }
   }, [aiStatus, isMicOn]);
 
-  // Handle camera permission and stream
   useEffect(() => {
     if (!isCameraOn || !isStarted) {
       if (videoRef.current && videoRef.current.srcObject) {
@@ -194,7 +189,7 @@ export function VideoConsultation() {
       const result = await generateGreeting();
       if (result.media && audioRef.current) {
         setIsStarted(true);
-        setAiStatus('speaking'); // Initial state is AI speaking the greeting
+        setAiStatus('speaking');
         audioRef.current.src = result.media;
         audioRef.current.play();
       } else {
@@ -216,40 +211,68 @@ export function VideoConsultation() {
     setIsStarted(false);
     setAiStatus('idle');
     setMessages([]);
+    setIsAwaitingDocument(false);
     if (audioRef.current) audioRef.current.src = '';
     setIsCameraOn(false);
   };
   
-  // When AI finishes speaking, switch to listening
   useEffect(() => {
     const audioEl = audioRef.current;
     if (!audioEl) return;
-    
     const onEnded = () => {
-        if (isStarted) {
-            setAiStatus('listening');
-        }
+        if (isStarted) { setAiStatus('listening'); }
     };
-    
     audioEl.addEventListener('ended', onEnded);
     return () => audioEl.removeEventListener('ended', onEnded);
   }, [isStarted]);
+  
+  const fileToDataUri = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAiStatus('processing');
+    try {
+      const dataUri = await fileToDataUri(file);
+      continueConsultation("I've uploaded the document you requested.", dataUri);
+    } catch (error) {
+      console.error("Error reading file:", error);
+      toast({
+        variant: "destructive",
+        title: "File Read Error",
+        description: "Could not read the selected file."
+      });
+      setAiStatus('listening');
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
 
   const getAiStatusText = () => {
     switch(aiStatus) {
-      case 'listening': return 'Listening...';
+      case 'listening': return isAwaitingDocument ? 'Awaiting document or your response...' : 'Listening...';
       case 'processing': return 'Thinking...';
       case 'speaking': return 'Speaking...';
       default: return 'Ready for consultation';
     }
   };
 
-
   return (
     <div className="w-full h-[75vh] flex flex-col items-center justify-center">
         <Card className="w-full h-full overflow-hidden shadow-2xl">
             <CardContent className="p-0 h-full bg-black">
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
               {!isStarted ? (
                 <div className="w-full h-full flex flex-col items-center justify-center text-center text-white">
                   <Scale className="h-24 w-24 text-white/80" />
@@ -258,11 +281,7 @@ export function VideoConsultation() {
                     {getAiStatusText()}
                   </p>
                   <Button onClick={handleStartConsultation} disabled={isLoading} className="mt-8" size="lg">
-                      {isLoading ? (
-                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      ) : (
-                          <Sparkles className="mr-2 h-5 w-5" />
-                      )}
+                      {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}
                       Start Consultation
                   </Button>
                 </div>
@@ -271,12 +290,8 @@ export function VideoConsultation() {
                   <div className="w-full h-full flex flex-col items-center justify-center text-center bg-black">
                       <div className="relative">
                           <Scale className={`h-24 w-24 text-white/80 transition-opacity duration-300 ${aiStatus === 'listening' ? 'opacity-100' : 'opacity-50'}`} />
-                          {aiStatus === 'listening' && (
-                              <div className="absolute inset-0 rounded-full bg-green-500/50 animate-ping"></div>
-                          )}
-                          {aiStatus === 'processing' && (
-                              <Loader2 className="absolute inset-0 m-auto h-12 w-12 text-white/90 animate-spin" />
-                          )}
+                          {aiStatus === 'listening' && <div className="absolute inset-0 rounded-full bg-green-500/50 animate-ping"></div>}
+                          {aiStatus === 'processing' && <Loader2 className="absolute inset-0 m-auto h-12 w-12 text-white/90 animate-spin" />}
                       </div>
                       <h2 className="mt-4 text-4xl font-bold text-white opacity-50">AI Lawyer</h2>
                       <p className="mt-2 text-lg text-white/70">{getAiStatusText()}</p>
@@ -295,9 +310,7 @@ export function VideoConsultation() {
                       <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md z-10 px-4">
                           <Alert variant="destructive">
                               <AlertTitle>Camera Error</AlertTitle>
-                              <AlertDescription>
-                                  Camera access was denied. Please enable it in your browser settings.
-                              </AlertDescription>
+                              <AlertDescription>Camera access was denied. Please enable it in your browser settings.</AlertDescription>
                           </Alert>
                       </div>
                   )}
@@ -321,6 +334,17 @@ export function VideoConsultation() {
                           >
                               {isCameraOn ? <Video size={28}/> : <VideoOff size={28}/>}
                           </Button>
+                          {isAwaitingDocument && (
+                            <Button
+                                variant='secondary'
+                                size="icon"
+                                className="rounded-full h-14 w-14 bg-blue-600 hover:bg-blue-700"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={aiStatus !== 'listening'}
+                            >
+                                <Upload size={28}/>
+                            </Button>
+                          )}
                            <Button
                               variant='destructive'
                               size="icon"
