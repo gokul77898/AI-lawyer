@@ -107,8 +107,8 @@ export function VideoConsultation() {
     };
     
     recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
        if (aiStatus === 'listening' && event.error !== 'no-speech' && event.error !== 'aborted') {
+         console.error('Speech recognition error:', event.error);
          toast({
           variant: 'destructive',
           title: 'Mic Error',
