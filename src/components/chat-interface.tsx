@@ -89,11 +89,20 @@ export function VideoConsultation() {
       }
     } catch (error) {
       console.error('Error during consultation:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Consultation Error',
-        description: 'Sorry, I encountered an issue. Please try again.',
-      });
+      const errorMessage = (error as Error)?.message || '';
+      if (errorMessage.includes('429')) {
+        toast({
+          variant: 'destructive',
+          title: 'API Quota Exceeded',
+          description: 'You have exceeded the daily limit for audio generation. Please try again tomorrow.',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Consultation Error',
+          description: 'Sorry, I encountered an issue. Please try again.',
+        });
+      }
       setAiStatus('listening');
     }
   }, [messages, toast, language]);
@@ -118,11 +127,20 @@ export function VideoConsultation() {
       }
     } catch (error) {
       console.error('Error requesting repetition:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Audio Error',
-        description: 'Could not generate the repetition request audio.',
-      });
+      const errorMessage = (error as Error)?.message || '';
+      if (errorMessage.includes('429')) {
+        toast({
+          variant: 'destructive',
+          title: 'API Quota Exceeded',
+          description: 'You have exceeded the daily limit for audio generation. Please try again tomorrow.',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Audio Error',
+          description: 'Could not generate the repetition request audio.',
+        });
+      }
       setAiStatus('listening'); // Fallback to listening
     }
   }, [language, isStarted, toast]);
@@ -270,11 +288,20 @@ export function VideoConsultation() {
       }
     } catch (error) {
       console.error('Error starting consultation:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Consultation Error',
-        description: 'Could not start the consultation. Please try again later.',
-      });
+      const errorMessage = (error as Error)?.message || '';
+      if (errorMessage.includes('429')) {
+        toast({
+          variant: 'destructive',
+          title: 'API Quota Exceeded',
+          description: 'You have exceeded the daily limit for audio generation. Please try again tomorrow.',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Consultation Error',
+          description: 'Could not start the consultation. Please try again later.',
+        });
+      }
     } finally {
       setIsLoading(false);
     }
