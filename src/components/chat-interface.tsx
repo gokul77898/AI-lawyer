@@ -9,7 +9,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting, GreetingInput } from '@/ai/flows/greeting-flow';
 import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
 import { summarizeConsultation } from '@/ai/flows/summarize-consultation';
-import { requestRepetition } from '@/ai/flows/request-repetition-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -42,6 +41,7 @@ export function VideoConsultation() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isAwaitingDocument, setIsAwaitingDocument] = useState(false);
   const [language, setLanguage] = useState('');
+  const [lastAiAudio, setLastAiAudio] = useState<string | null>(null);
 
   const [summary, setSummary] = useState('');
   const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -52,6 +52,24 @@ export function VideoConsultation() {
   // Core function to handle conversation turns with the AI
   const continueConsultation = useCallback(async (query: string, documentDataUri?: string) => {
     if (!language) return;
+    
+    const normalizedQuery = query.toLowerCase().trim().replace(/[.,?]/g, '');
+    const repeatCommands = ['repeat', 'repeat that', 'say that again', 'can you repeat that', 'pardon'];
+
+    if (repeatCommands.includes(normalizedQuery)) {
+        setMessages(prev => [...prev, { role: 'user', content: query }]);
+        if (lastAiAudio && audioRef.current) {
+            setAiStatus('speaking');
+            audioRef.current.src = lastAiAudio;
+            audioRef.current.play();
+        } else {
+            toast({
+                title: "Nothing to repeat",
+                description: "I haven't said anything yet that I can repeat.",
+            });
+        }
+        return;
+    }
 
     setAiStatus('processing');
     setIsAwaitingDocument(false); // Stop waiting for a doc once we send a new request
@@ -74,6 +92,8 @@ export function VideoConsultation() {
           ...prev, 
           { role: 'model', content: result.text }
         ]);
+        
+        setLastAiAudio(result.media);
 
         if (result.documentRequest) {
           setIsAwaitingDocument(true);
@@ -105,45 +125,7 @@ export function VideoConsultation() {
       }
       setAiStatus('listening');
     }
-  }, [messages, toast, language]);
-
-  // Handle cases where the AI can't hear the user
-  const handleRepetitionRequest = useCallback(async () => {
-    if (!language || !isStarted) return;
-
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-
-    setAiStatus('processing');
-    try {
-      const result = await requestRepetition({ language });
-      if (result.media && audioRef.current) {
-        setAiStatus('speaking');
-        audioRef.current.src = result.media;
-        audioRef.current.play(); // onended will set status back to listening
-      } else {
-        throw new Error('No repetition audio received.');
-      }
-    } catch (error) {
-      console.error('Error requesting repetition:', error);
-      const errorMessage = (error as Error)?.message || '';
-      if (errorMessage.includes('429')) {
-        toast({
-          variant: 'destructive',
-          title: 'API Quota Exceeded',
-          description: 'You have exceeded the daily limit for audio generation. Please try again tomorrow.',
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Audio Error',
-          description: 'Could not generate the repetition request audio.',
-        });
-      }
-      setAiStatus('listening'); // Fallback to listening
-    }
-  }, [language, isStarted, toast]);
+  }, [messages, toast, language, lastAiAudio]);
   
   // Setup Speech Recognition
   useEffect(() => {
@@ -176,14 +158,11 @@ export function VideoConsultation() {
     };
     
     recognition.onerror = (event) => {
-       if (event.error === 'no-speech') {
-         if (aiStatus === 'listening') {
-           handleRepetitionRequest();
-         }
+       if (event.error === 'no-speech' || event.error === 'aborted') {
+         // Silently ignore these events. The recognition will restart on 'end' if appropriate.
          return;
        }
        if (event.error !== 'aborted') {
-         console.error('Speech recognition error:', event.error);
          toast({
           variant: 'destructive',
           title: 'Mic Error',
@@ -208,7 +187,7 @@ export function VideoConsultation() {
       }
     };
 
-  }, [toast, aiStatus, continueConsultation, language, handleRepetitionRequest]);
+  }, [toast, aiStatus, continueConsultation, language]);
   
   useEffect(() => {
     const recognition = recognitionRef.current;
@@ -276,11 +255,13 @@ export function VideoConsultation() {
     }
     setIsLoading(true);
     setMessages([]);
+    setLastAiAudio(null);
     try {
       const result = await generateGreeting({ language });
       if (result.media && audioRef.current) {
         setIsStarted(true);
         setAiStatus('speaking');
+        setLastAiAudio(result.media);
         audioRef.current.src = result.media;
         audioRef.current.play();
       } else {
