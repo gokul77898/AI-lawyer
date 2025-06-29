@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export function VideoConsultation() {
@@ -109,13 +109,6 @@ export function VideoConsultation() {
                         >
                             {isCameraOn ? <Video size={28}/> : <VideoOff size={28}/>}
                         </Button>
-                         <Button
-                            variant="destructive"
-                            size="icon"
-                            className="rounded-full h-14 w-14"
-                         >
-                             <PhoneOff size={28}/>
-                         </Button>
                     </div>
                 </div>
             </CardContent>
