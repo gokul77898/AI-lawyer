@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting } from '@/ai/flows/greeting-flow';
 
@@ -85,6 +85,12 @@ export function VideoConsultation() {
     }
   };
 
+  const handleEndConsultation = () => {
+    setIsStarted(false);
+    setAudioSrc(null);
+    setIsCameraOn(false);
+  };
+
 
   return (
     <div className="w-full h-[75vh] flex flex-col items-center justify-center">
@@ -152,11 +158,19 @@ export function VideoConsultation() {
                           >
                               {isCameraOn ? <Video size={28}/> : <VideoOff size={28}/>}
                           </Button>
+                           <Button
+                              variant='destructive'
+                              size="icon"
+                              className="rounded-full h-14 w-14"
+                              onClick={handleEndConsultation}
+                          >
+                              <PhoneOff size={28}/>
+                          </Button>
                       </div>
                   </div>
                 </div>
               )}
-              {audioSrc && <audio src={audioSrc} autoPlay />}
+              {audioSrc && isStarted && <audio src={audioSrc} autoPlay />}
             </CardContent>
         </Card>
     </div>
