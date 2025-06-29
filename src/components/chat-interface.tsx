@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting, GreetingInput } from '@/ai/flows/greeting-flow';
 import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
 import { summarizeConsultation } from '@/ai/flows/summarize-consultation';
+import { requestRepetition } from '@/ai/flows/request-repetition-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -96,6 +97,35 @@ export function VideoConsultation() {
       setAiStatus('listening');
     }
   }, [messages, toast, language]);
+
+  // Handle cases where the AI can't hear the user
+  const handleRepetitionRequest = useCallback(async () => {
+    if (!language || !isStarted) return;
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    setAiStatus('processing');
+    try {
+      const result = await requestRepetition({ language });
+      if (result.media && audioRef.current) {
+        setAiStatus('speaking');
+        audioRef.current.src = result.media;
+        audioRef.current.play(); // onended will set status back to listening
+      } else {
+        throw new Error('No repetition audio received.');
+      }
+    } catch (error) {
+      console.error('Error requesting repetition:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Audio Error',
+        description: 'Could not generate the repetition request audio.',
+      });
+      setAiStatus('listening'); // Fallback to listening
+    }
+  }, [language, isStarted, toast]);
   
   // Setup Speech Recognition
   useEffect(() => {
@@ -128,7 +158,13 @@ export function VideoConsultation() {
     };
     
     recognition.onerror = (event) => {
-       if (event.error !== 'no-speech' && event.error !== 'aborted') {
+       if (event.error === 'no-speech') {
+         if (aiStatus === 'listening') {
+           handleRepetitionRequest();
+         }
+         return;
+       }
+       if (event.error !== 'aborted') {
          console.error('Speech recognition error:', event.error);
          toast({
           variant: 'destructive',
@@ -154,7 +190,7 @@ export function VideoConsultation() {
       }
     };
 
-  }, [toast, aiStatus, continueConsultation, language]);
+  }, [toast, aiStatus, continueConsultation, language, handleRepetitionRequest]);
   
   useEffect(() => {
     const recognition = recognitionRef.current;
