@@ -4,11 +4,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff, Upload } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff, Upload, ClipboardCopy } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting, GreetingInput } from '@/ai/flows/greeting-flow';
 import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
+import { summarizeConsultation } from '@/ai/flows/summarize-consultation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 
 // Define message type for conversation history
@@ -27,6 +31,7 @@ export function VideoConsultation() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const [isStarted, setIsStarted] = useState(false);
@@ -36,6 +41,10 @@ export function VideoConsultation() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isAwaitingDocument, setIsAwaitingDocument] = useState(false);
   const [language, setLanguage] = useState('');
+
+  const [summary, setSummary] = useState('');
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -46,7 +55,10 @@ export function VideoConsultation() {
     setAiStatus('processing');
     setIsAwaitingDocument(false); // Stop waiting for a doc once we send a new request
     
-    const historyForAi: LiveConsultationInput['history'] = messages.map(m => ({ role: m.role, content: m.content }));
+    const newMessages: Message[] = [...messages, { role: 'user', content: query }];
+    setMessages(newMessages);
+
+    const historyForAi: LiveConsultationInput['history'] = newMessages.map(m => ({ role: m.role, content: m.content }));
     
     const input: LiveConsultationInput = { query, history: historyForAi, language };
     if (documentDataUri) {
@@ -59,7 +71,6 @@ export function VideoConsultation() {
       if (result.media && result.text) {
         setMessages(prev => [
           ...prev, 
-          { role: 'user', content: query },
           { role: 'model', content: result.text }
         ]);
 
@@ -117,7 +128,7 @@ export function VideoConsultation() {
     };
     
     recognition.onerror = (event) => {
-       if (aiStatus === 'listening' && event.error !== 'no-speech' && event.error !== 'aborted') {
+       if (event.error !== 'no-speech' && event.error !== 'aborted') {
          console.error('Speech recognition error:', event.error);
          toast({
           variant: 'destructive',
@@ -233,14 +244,32 @@ export function VideoConsultation() {
     }
   };
 
-  const handleEndConsultation = () => {
-    setIsStarted(false);
+  const handleEndConsultation = async () => {
     setAiStatus('idle');
-    setMessages([]);
-    setIsAwaitingDocument(false);
     if (audioRef.current) audioRef.current.src = '';
     setIsCameraOn(false);
-    // Do not reset language, user might want to start another session in the same language
+
+    if (messages.length > 0) {
+      setIsSummarizing(true);
+      try {
+        const result = await summarizeConsultation({ history: messages });
+        setSummary(result.summary);
+        setShowSummaryModal(true);
+      } catch (error) {
+        console.error("Error generating summary:", error);
+        toast({
+          variant: "destructive",
+          title: "Summarization Failed",
+          description: "Could not create a summary of your session.",
+        });
+      } finally {
+        setIsSummarizing(false);
+      }
+    }
+
+    setIsStarted(false);
+    setMessages([]);
+    setIsAwaitingDocument(false);
   };
   
   useEffect(() => {
@@ -253,6 +282,18 @@ export function VideoConsultation() {
     return () => audioEl.removeEventListener('ended', onEnded);
   }, [isStarted]);
   
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+        const element = scrollAreaRef.current.parentElement;
+        if (element) {
+            element.scrollTo({
+                top: element.scrollHeight,
+                behavior: 'smooth',
+            });
+        }
+    }
+  }, [messages]);
+
   const fileToDataUri = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -285,6 +326,22 @@ export function VideoConsultation() {
     }
   };
 
+  const handleCopySummary = () => {
+    if (!summary) return;
+    navigator.clipboard.writeText(summary).then(() => {
+      toast({
+        title: "Copied!",
+        description: "The summary has been copied to your clipboard.",
+      });
+    }).catch(err => {
+      console.error("Failed to copy summary: ", err);
+      toast({
+        variant: "destructive",
+        title: "Copy Failed",
+        description: "Could not copy the summary to your clipboard.",
+      });
+    });
+  };
 
   const getAiStatusText = () => {
     switch(aiStatus) {
@@ -329,13 +386,51 @@ export function VideoConsultation() {
               ) : (
                 <div className="relative w-full h-full">
                   <div className="w-full h-full flex flex-col items-center justify-center text-center bg-black">
-                      <div className="relative">
-                          <Scale className={`h-24 w-24 text-white/80 transition-opacity duration-300 ${aiStatus === 'listening' ? 'opacity-100' : 'opacity-50'}`} />
-                          {aiStatus === 'listening' && <div className="absolute inset-0 rounded-full bg-green-500/50 animate-ping"></div>}
-                          {aiStatus === 'processing' && <Loader2 className="absolute inset-0 m-auto h-12 w-12 text-white/90 animate-spin" />}
+                      {/* Top part: Visual Feedback */}
+                      <div className="flex-shrink-0 pt-8 pb-4 flex flex-col items-center justify-center">
+                          <div className="relative">
+                              <Scale className={cn(
+                                "h-24 w-24 text-white/80 transition-all duration-300",
+                                aiStatus === 'speaking' && 'animate-pulse',
+                                aiStatus !== 'speaking' && 'opacity-50'
+                              )} />
+                              {aiStatus === 'listening' && <div className="absolute inset-0 rounded-full bg-green-500/50 animate-ping"></div>}
+                              {aiStatus === 'processing' && <Loader2 className="absolute inset-0 m-auto h-12 w-12 text-white/90 animate-spin" />}
+                          </div>
+                          <h2 className="mt-4 text-2xl font-bold text-white opacity-50">AI Lawyer</h2>
+                          <p className="mt-1 text-md text-white/70">{getAiStatusText()}</p>
                       </div>
-                      <h2 className="mt-4 text-4xl font-bold text-white opacity-50">AI Lawyer</h2>
-                      <p className="mt-2 text-lg text-white/70">{getAiStatusText()}</p>
+
+                      {/* Bottom part: Live Transcript */}
+                      <ScrollArea className="flex-grow w-full px-6 mb-24">
+                          <div className="space-y-4 pr-4" ref={scrollAreaRef}>
+                              {messages.map((message, index) => (
+                                  <div
+                                      key={index}
+                                      className={cn(
+                                          'flex items-start gap-3 animate-in fade-in',
+                                          message.role === 'user' ? 'justify-end' : 'justify-start'
+                                      )}
+                                  >
+                                      {message.role === 'model' && (
+                                          <div className="p-2 rounded-full bg-secondary/20 shrink-0">
+                                              <Scale className="h-5 w-5 text-white/80" />
+                                          </div>
+                                      )}
+                                      <div
+                                          className={cn(
+                                          'max-w-[75%] rounded-lg px-4 py-2 text-white',
+                                          message.role === 'user'
+                                              ? 'bg-primary'
+                                              : 'bg-secondary/10'
+                                          )}
+                                      >
+                                          <p className="text-sm leading-relaxed">{message.content}</p>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      </ScrollArea>
                   </div>
                   
                   <div className="absolute top-4 right-4 w-48 h-36 z-10 bg-black rounded-md">
@@ -391,8 +486,9 @@ export function VideoConsultation() {
                               size="icon"
                               className="rounded-full h-14 w-14"
                               onClick={handleEndConsultation}
+                              disabled={isSummarizing}
                           >
-                              <PhoneOff size={28}/>
+                            {isSummarizing ? <Loader2 className="animate-spin" size={28} /> : <PhoneOff size={28}/>}
                           </Button>
                       </div>
                   </div>
@@ -401,6 +497,28 @@ export function VideoConsultation() {
               <audio ref={audioRef} />
             </CardContent>
         </Card>
+      <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Consultation Summary</DialogTitle>
+            <DialogDescription>
+              Here is a summary of your session. You can copy it for your records.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto p-1 pr-4">
+            <pre className="whitespace-pre-wrap text-sm text-foreground/90 font-sans">
+              {summary}
+            </pre>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSummaryModal(false)}>Close</Button>
+            <Button onClick={handleCopySummary}>
+              <ClipboardCopy className="mr-2 h-4 w-4" />
+              Copy Summary
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
