@@ -281,10 +281,21 @@ export function VideoConsultation() {
   };
 
   const handleEndConsultation = async () => {
+    // Immediately stop listening and speaking to prevent race conditions.
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+    }
+
+    // Set state to prevent any further actions.
     setAiStatus('idle');
-    if (audioRef.current) audioRef.current.src = '';
+    setIsStarted(false);
     setIsCameraOn(false);
 
+    // Generate summary only if there's a conversation.
     if (messages.length > 0) {
       setIsSummarizing(true);
       try {
@@ -303,7 +314,7 @@ export function VideoConsultation() {
       }
     }
 
-    setIsStarted(false);
+    // Reset for the next session.
     setMessages([]);
     setIsAwaitingDocument(false);
   };
