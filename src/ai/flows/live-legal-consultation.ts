@@ -137,7 +137,7 @@ const liveConsultationFlow = ai.defineFlow(
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: {voiceName: 'Vega'},
+            prebuiltVoiceConfig: {voiceName: 'Algenib'},
           },
         },
       },

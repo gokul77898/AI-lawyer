@@ -60,7 +60,7 @@ const greetingFlow = ai.defineFlow(
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: {voiceName: 'Vega'},
+            prebuiltVoiceConfig: {voiceName: 'Algenib'},
           },
         },
       },
