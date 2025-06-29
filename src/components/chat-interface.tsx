@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -63,13 +62,6 @@ export function VideoConsultation() {
     <div className="w-full h-[75vh] flex flex-col items-center justify-center">
         <Card className="w-full h-full relative overflow-hidden shadow-2xl">
             <CardContent className="p-0 h-full">
-                <Image
-                    src="https://placehold.co/1280x720.png"
-                    alt="AI Lawyer"
-                    fill
-                    className="object-cover z-0"
-                    data-ai-hint="lawyer portrait"
-                />
                 
                 <div className="absolute top-4 right-4 w-48 h-36 z-10 bg-black rounded-md">
                    <video ref={videoRef} className="w-full h-full rounded-md object-cover" autoPlay muted playsInline />
