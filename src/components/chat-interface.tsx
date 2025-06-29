@@ -5,8 +5,9 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff, Scale } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { generateGreeting } from '@/ai/flows/greeting-flow';
 
 export function VideoConsultation() {
   const [isMicOn, setIsMicOn] = useState(true);
@@ -14,6 +15,10 @@ export function VideoConsultation() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+
+  const [isStarted, setIsStarted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isCameraOn) {
@@ -59,6 +64,29 @@ export function VideoConsultation() {
       setIsCameraOn(prev => !prev);
   }
 
+  const handleStartConsultation = async () => {
+    setIsLoading(true);
+    try {
+      const result = await generateGreeting();
+      if (result.media) {
+        setAudioSrc(result.media);
+        setIsStarted(true);
+      } else {
+        throw new Error('No greeting audio received.');
+      }
+    } catch (error) {
+      console.error('Error starting consultation:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Consultation Error',
+        description: 'Could not start the consultation. Please try again later.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
   return (
     <div className="w-full h-[75vh] flex flex-col items-center justify-center">
         <Card className="w-full h-full relative overflow-hidden shadow-2xl">
@@ -74,7 +102,19 @@ export function VideoConsultation() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                     <Scale className="h-24 w-24 text-white/80" />
                     <h2 className="mt-4 text-4xl font-bold text-white">AI Lawyer</h2>
-                    <p className="mt-2 text-lg text-white/70">Ready for consultation</p>
+                    <p className="mt-2 text-lg text-white/70">
+                      {isStarted ? "Listening..." : "Ready for consultation"}
+                    </p>
+                    {!isStarted && (
+                        <Button onClick={handleStartConsultation} disabled={isLoading} className="mt-8" size="lg">
+                            {isLoading ? (
+                                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            ) : (
+                                <Sparkles className="mr-2 h-5 w-5" />
+                            )}
+                            Start Consultation
+                        </Button>
+                    )}
                 </div>
                 
                 <div className="absolute top-4 right-4 w-48 h-36 z-10 bg-black rounded-md">
@@ -117,6 +157,7 @@ export function VideoConsultation() {
                         </Button>
                     </div>
                 </div>
+                {audioSrc && <audio src={audioSrc} autoPlay />}
             </CardContent>
         </Card>
     </div>
