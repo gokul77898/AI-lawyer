@@ -60,12 +60,12 @@ const greetingFlow = ai.defineFlow(
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: {voiceName: 'Algenib'},
+            prebuiltVoiceConfig: {voiceName: 'Vega'},
           },
         },
       },
       prompt:
-        'Hello, I am LexMate, your AI legal assistant. How can I help you today?',
+        "Hello! I'm LexMate, your AI legal assistant. How can I help you today?",
     });
 
     if (!media) {
