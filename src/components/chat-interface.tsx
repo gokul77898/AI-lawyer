@@ -49,6 +49,16 @@ export function VideoConsultation() {
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  // Use refs to hold the latest state values for our stable callbacks
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const lastAiAudioRef = useRef(lastAiAudio);
+  lastAiAudioRef.current = lastAiAudio;
+
+  const aiStatusRef = useRef(aiStatus);
+  aiStatusRef.current = aiStatus;
+
   // Core function to handle conversation turns with the AI
   const continueConsultation = useCallback(async (query: string, documentDataUri?: string) => {
     if (!language) return;
@@ -58,9 +68,9 @@ export function VideoConsultation() {
 
     if (repeatCommands.includes(normalizedQuery)) {
         setMessages(prev => [...prev, { role: 'user', content: query }]);
-        if (lastAiAudio && audioRef.current) {
+        if (lastAiAudioRef.current && audioRef.current) {
             setAiStatus('speaking');
-            audioRef.current.src = lastAiAudio;
+            audioRef.current.src = lastAiAudioRef.current;
             audioRef.current.play();
         } else {
             toast({
@@ -74,7 +84,7 @@ export function VideoConsultation() {
     setAiStatus('processing');
     setIsAwaitingDocument(false); // Stop waiting for a doc once we send a new request
     
-    const newMessages: Message[] = [...messages, { role: 'user', content: query }];
+    const newMessages: Message[] = [...messagesRef.current, { role: 'user', content: query }];
     setMessages(newMessages);
 
     const historyForAi: LiveConsultationInput['history'] = newMessages.map(m => ({ role: m.role, content: m.content }));
@@ -125,11 +135,16 @@ export function VideoConsultation() {
       }
       setAiStatus('listening');
     }
-  }, [messages, toast, language, lastAiAudio]);
+  }, [language, toast]);
   
-  // Setup Speech Recognition
+  // Ref to hold the latest version of continueConsultation
+  const continueConsultationRef = useRef(continueConsultation);
+  continueConsultationRef.current = continueConsultation;
+
+  // Setup Speech Recognition. This effect runs only when a session starts/ends or language changes.
   useEffect(() => {
-    if (typeof window === 'undefined' || !language) return;
+    if (typeof window === 'undefined' || !language || !isStarted) return;
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast({
@@ -140,7 +155,6 @@ export function VideoConsultation() {
       return;
     }
     
-    // Stop any existing recognition instance
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
@@ -153,42 +167,42 @@ export function VideoConsultation() {
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       if (transcript) {
-        continueConsultation(transcript);
+        continueConsultationRef.current(transcript);
       }
     };
     
     recognition.onerror = (event) => {
        if (event.error === 'no-speech' || event.error === 'aborted') {
-         // Silently ignore these events. The recognition will restart on 'end' if appropriate.
          return;
        }
-       if (event.error !== 'aborted') {
-         toast({
-          variant: 'destructive',
-          title: 'Mic Error',
-          description: 'Could not understand audio. Please check your microphone.',
-        });
-      }
+       toast({
+        variant: 'destructive',
+        title: 'Mic Error',
+        description: 'Could not understand audio. Please check your microphone.',
+      });
     };
 
     recognition.onend = () => {
-      if (aiStatus === 'listening') {
+      // Use the ref to check the current status, avoiding stale closures.
+      if (aiStatusRef.current === 'listening') {
         try { recognition.start(); } catch(e) { console.error("Could not restart recognition", e); }
       }
     };
     
     recognitionRef.current = recognition;
 
-    // Clean up on component unmount or language change
     return () => {
       if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
         recognitionRef.current.stop();
         recognitionRef.current = null;
       }
     };
-
-  }, [toast, aiStatus, continueConsultation, language]);
+  }, [isStarted, language, toast]);
   
+  // This effect ONLY starts/stops the recognition engine based on the current AI status.
   useEffect(() => {
     const recognition = recognitionRef.current;
     if (!recognition) return;
