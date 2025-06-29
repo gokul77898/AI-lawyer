@@ -143,9 +143,10 @@ If you determine that reviewing a document (like a contract, lease, or notice) i
     }
 
     // Check if the AI requested a document
-    const documentRequest = llmResponse.toolCalls.some(
-      call => call.tool === 'requestDocumentTool'
-    );
+    const documentRequest =
+      llmResponse.toolCalls?.some(
+        call => call.tool === 'requestDocumentTool'
+      ) || false;
 
     // Generate the spoken response using the TTS model
     const {media: ttsMedia} = await ai.generate({
