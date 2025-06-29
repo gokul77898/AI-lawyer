@@ -65,7 +65,7 @@ const greetingFlow = ai.defineFlow(
         },
       },
       prompt:
-        "Hello! I'm LexMate, your AI legal assistant. How can I help you today?",
+        "Hi, I'm your legal adviser and personal lawyer. May I know your name?",
     });
 
     if (!media) {
