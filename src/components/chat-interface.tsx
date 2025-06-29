@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { generateGreeting } from '@/ai/flows/greeting-flow';
-import { liveLegalConsultation } from '@/ai/flows/live-legal-consultation';
+import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
 
 // Define message type for conversation history
 type Message = {
@@ -37,17 +37,21 @@ export function VideoConsultation() {
   // Function to handle the AI response and start listening again
   const handleAiResponse = useCallback(async (query: string) => {
     setAiStatus('processing');
-    const history = messages.map(m => ({ role: m.role, content: m.content }));
     
+    // Construct the history from the state
+    const historyForAi: LiveConsultationInput['history'] = messages.map(m => ({ role: m.role, content: m.content }));
+
     try {
-      const result = await liveLegalConsultation({ query, history });
+      const result = await liveLegalConsultation({ query, history: historyForAi });
       
       if (result.media && result.text) {
+        // Add the current exchange to the history
         setMessages(prev => [
           ...prev, 
           { role: 'user', content: query },
           { role: 'model', content: result.text }
         ]);
+
         setAiStatus('speaking');
         if(audioRef.current) {
             audioRef.current.src = result.media;
