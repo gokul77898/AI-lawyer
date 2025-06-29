@@ -6,8 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Mic, MicOff, Video, VideoOff, Scale, Loader2, Sparkles, PhoneOff, Upload } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { generateGreeting } from '@/ai/flows/greeting-flow';
+import { generateGreeting, GreetingInput } from '@/ai/flows/greeting-flow';
 import { liveLegalConsultation, LiveConsultationInput } from '@/ai/flows/live-legal-consultation';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 // Define message type for conversation history
 type Message = {
@@ -33,17 +35,20 @@ export function VideoConsultation() {
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isAwaitingDocument, setIsAwaitingDocument] = useState(false);
+  const [language, setLanguage] = useState('');
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Core function to handle conversation turns with the AI
   const continueConsultation = useCallback(async (query: string, documentDataUri?: string) => {
+    if (!language) return;
+
     setAiStatus('processing');
     setIsAwaitingDocument(false); // Stop waiting for a doc once we send a new request
     
     const historyForAi: LiveConsultationInput['history'] = messages.map(m => ({ role: m.role, content: m.content }));
     
-    const input: LiveConsultationInput = { query, history: historyForAi };
+    const input: LiveConsultationInput = { query, history: historyForAi, language };
     if (documentDataUri) {
       input.documentDataUri = documentDataUri;
     }
@@ -79,11 +84,11 @@ export function VideoConsultation() {
       });
       setAiStatus('listening');
     }
-  }, [messages, toast]);
+  }, [messages, toast, language]);
   
   // Setup Speech Recognition
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !language) return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast({
@@ -94,10 +99,15 @@ export function VideoConsultation() {
       return;
     }
     
+    // Stop any existing recognition instance
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.lang = language;
     
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
@@ -125,7 +135,15 @@ export function VideoConsultation() {
     
     recognitionRef.current = recognition;
 
-  }, [toast, aiStatus, continueConsultation]);
+    // Clean up on component unmount or language change
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+    };
+
+  }, [toast, aiStatus, continueConsultation, language]);
   
   useEffect(() => {
     const recognition = recognitionRef.current;
@@ -183,10 +201,18 @@ export function VideoConsultation() {
   }
 
   const handleStartConsultation = async () => {
+    if (!language) {
+      toast({
+        variant: "destructive",
+        title: "Language not selected",
+        description: "Please select a language to start the consultation."
+      });
+      return;
+    }
     setIsLoading(true);
     setMessages([]);
     try {
-      const result = await generateGreeting();
+      const result = await generateGreeting({ language });
       if (result.media && audioRef.current) {
         setIsStarted(true);
         setAiStatus('speaking');
@@ -214,6 +240,7 @@ export function VideoConsultation() {
     setIsAwaitingDocument(false);
     if (audioRef.current) audioRef.current.src = '';
     setIsCameraOn(false);
+    // Do not reset language, user might want to start another session in the same language
   };
   
   useEffect(() => {
@@ -274,13 +301,27 @@ export function VideoConsultation() {
             <CardContent className="p-0 h-full bg-black">
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
               {!isStarted ? (
-                <div className="w-full h-full flex flex-col items-center justify-center text-center text-white">
+                <div className="w-full h-full flex flex-col items-center justify-center text-center text-white space-y-6">
                   <Scale className="h-24 w-24 text-white/80" />
-                  <h2 className="mt-4 text-4xl font-bold">AI Lawyer</h2>
-                  <p className="mt-2 text-lg text-white/70">
-                    {getAiStatusText()}
-                  </p>
-                  <Button onClick={handleStartConsultation} disabled={isLoading} className="mt-8" size="lg">
+                  <div>
+                    <h2 className="text-4xl font-bold">AI Lawyer</h2>
+                    <p className="mt-2 text-lg text-white/70">
+                      Select a language to begin
+                    </p>
+                  </div>
+                  <div className="w-full max-w-xs">
+                    <Select value={language} onValueChange={setLanguage}>
+                        <SelectTrigger className="bg-background/20 text-white border-white/30">
+                            <SelectValue placeholder="Select a language" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="en-US">English</SelectItem>
+                            <SelectItem value="hi-IN">हिन्दी (Hindi)</SelectItem>
+                            <SelectItem value="kn-IN">ಕನ್ನಡ (Kannada)</SelectItem>
+                        </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleStartConsultation} disabled={isLoading || !language} className="mt-2" size="lg">
                       {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}
                       Start Consultation
                   </Button>
