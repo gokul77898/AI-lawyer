@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Scale } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export function VideoConsultation() {
@@ -61,7 +62,20 @@ export function VideoConsultation() {
   return (
     <div className="w-full h-[75vh] flex flex-col items-center justify-center">
         <Card className="w-full h-full relative overflow-hidden shadow-2xl">
-            <CardContent className="p-0 h-full">
+            <CardContent className="p-0 h-full bg-black">
+                <Image
+                  src="https://placehold.co/1280x720.png"
+                  alt="AI Lawyer"
+                  layout="fill"
+                  objectFit="cover"
+                  className="opacity-20"
+                  data-ai-hint="lawyer person"
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <Scale className="h-24 w-24 text-white/80" />
+                    <h2 className="mt-4 text-4xl font-bold text-white">AI Lawyer</h2>
+                    <p className="mt-2 text-lg text-white/70">Ready for consultation</p>
+                </div>
                 
                 <div className="absolute top-4 right-4 w-48 h-36 z-10 bg-black rounded-md">
                    <video ref={videoRef} className="w-full h-full rounded-md object-cover" autoPlay muted playsInline />
