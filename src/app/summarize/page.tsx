@@ -1,17 +1,18 @@
-import { SummarizeForm } from "@/components/summarize-form";
-import { FileText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { XCircle } from "lucide-react";
 
 export default function SummarizePage() {
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="text-center">
-        <FileText className="mx-auto h-12 w-12 text-primary" />
-        <h1 className="text-3xl font-bold mt-4 font-headline">Summarize Legal Documents</h1>
-        <p className="mt-2 text-muted-foreground">
-          Upload a legal document (FIR, petition, case law) to get a concise summary.
-        </p>
-      </div>
-      <SummarizeForm />
+    <div className="flex items-center justify-center py-12">
+      <Card className="max-w-md w-full text-center">
+        <CardHeader className="items-center">
+            <XCircle className="h-12 w-12 text-destructive" />
+            <CardTitle className="mt-4">Feature Not Available</CardTitle>
+        </CardHeader>
+        <CardContent className="text-muted-foreground">
+          <p>This feature has been removed to focus on the live video consultation experience.</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
