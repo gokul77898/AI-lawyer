@@ -46,7 +46,8 @@ const summarizeConsultationFlow = ai.defineFlow(
       return {summary: 'No conversation to summarize.'};
     }
 
-    const {output} = await ai.generate({
+    const llmResponse = await ai.generate({
+      model: 'googleai/gemini-2.0-flash',
       prompt: `You are an expert legal assistant. Based on the following conversation transcript, generate a clear and concise summary. The summary should be well-structured, easy to read, and include the following sections:
 
 1.  **Key Points Discussed:** A bulleted list of the main topics and facts covered.
@@ -64,7 +65,7 @@ ${history
     });
 
     return {
-      summary: output?.text || 'Could not generate a summary.',
+      summary: llmResponse.text || 'Could not generate a summary.',
     };
   }
 );
