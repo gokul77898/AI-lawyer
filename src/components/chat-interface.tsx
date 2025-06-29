@@ -1,102 +1,138 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useTransition, useRef, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Video, Mic, VideoOff, MicOff, User, Bot } from 'lucide-react';
-import { Avatar, AvatarFallback } from './ui/avatar';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Send, User, Bot, Loader2 } from 'lucide-react';
+import { offlineLegalQA } from '@/ai/flows/offline-legal-qa';
+
+interface Message {
+  role: 'user' | 'bot';
+  content: string;
+}
 
 export function ChatInterface() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
-  const [isAudioMuted, setIsAudioMuted] = useState(true);
-  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const getCameraPermission = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMessage: Message = { role: 'user', content: input };
+    setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input;
+    setInput('');
+
+    startTransition(async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setHasCameraPermission(true);
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        const result = await offlineLegalQA({ query: currentInput });
+        const botMessage: Message = { role: 'bot', content: result.answer };
+        setMessages((prev) => [...prev, botMessage]);
       } catch (error) {
-        console.error('Error accessing media:', error);
-        setHasCameraPermission(false);
+        console.error('Error getting response:', error);
         toast({
           variant: 'destructive',
-          title: 'Media Access Denied',
-          description: 'Please enable camera and microphone permissions in your browser settings.',
+          title: 'Error',
+          description: 'Failed to get a response from the assistant.',
         });
+        setMessages((prev) => prev.slice(0, prev.length -1));
       }
-    };
-
-    getCameraPermission();
-
-    return () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-        }
-    }
-  }, [toast]);
+    });
+  };
 
   useEffect(() => {
-    if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getAudioTracks().forEach(track => track.enabled = !isAudioMuted);
-        stream.getVideoTracks().forEach(track => track.enabled = !isVideoOff);
+    if (scrollAreaRef.current) {
+        const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
+        if (viewport) {
+            viewport.scrollTop = viewport.scrollHeight;
+        }
     }
-  }, [isAudioMuted, isVideoOff]);
-
+  }, [messages]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center">
-        <Card className="w-full max-w-4xl shadow-2xl">
-            <CardContent className="p-4 md:p-6 grid md:grid-cols-2 gap-4">
-                <div className="relative w-full aspect-video bg-secondary rounded-lg overflow-hidden border flex flex-col items-center justify-center">
-                    <video ref={videoRef} className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`} autoPlay muted />
-                     { isVideoOff && (
-                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                            <Avatar className="h-24 w-24">
-                               <AvatarFallback><User size={48}/></AvatarFallback>
-                            </Avatar>
-                            <p>Your camera is off</p>
-                        </div>
-                    )}
-                    { hasCameraPermission === false && (
-                         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-4">
-                            <Alert variant="destructive">
-                                <AlertTitle>Camera Access Required</AlertTitle>
-                                <AlertDescription>
-                                    Please allow camera access.
-                                </AlertDescription>
-                            </Alert>
-                        </div>
-                    )}
-                    <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 text-sm rounded-md">You</div>
+    <Card className="w-full max-w-2xl h-[70vh] flex flex-col shadow-2xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bot /> LexMate Assistant
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full pr-4" ref={scrollAreaRef}>
+          <div className="space-y-4">
+             <div className="flex gap-3">
+                <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={18}/></AvatarFallback>
+                </Avatar>
+                <div className="rounded-lg px-4 py-2 bg-secondary">
+                    <p className="text-sm">Hello! How can I assist you with your legal questions today?</p>
                 </div>
-                 <div className="relative w-full aspect-video bg-secondary rounded-lg overflow-hidden border flex flex-col items-center justify-center text-muted-foreground">
-                    <Avatar className="h-24 w-24">
-                        <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={48}/></AvatarFallback>
-                    </Avatar>
-                    <p className="mt-4">Connecting to LexMate...</p>
-                    <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 text-sm rounded-md">AI Assistant</div>
-                </div>
-            </CardContent>
-             <div className="flex justify-center gap-4 p-4 border-t">
-                <Button size="icon" variant={isAudioMuted ? 'destructive' : 'secondary'} className="rounded-full h-12 w-12" onClick={() => setIsAudioMuted(p => !p)}>
-                    {isAudioMuted ? <MicOff /> : <Mic />}
-                </Button>
-                <Button size="icon" variant={isVideoOff ? 'destructive' : 'secondary'} className="rounded-full h-12 w-12" onClick={() => setIsVideoOff(p => !p)}>
-                    {isVideoOff ? <VideoOff /> : <Video />}
-                </Button>
             </div>
-        </Card>
-    </div>
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex gap-3 ${
+                  message.role === 'user' ? 'justify-end' : ''
+                }`}
+              >
+                {message.role === 'bot' && (
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={18}/></AvatarFallback>
+                  </Avatar>
+                )}
+                <div
+                  className={`rounded-lg px-4 py-2 max-w-[80%] break-words ${
+                    message.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-secondary'
+                  }`}
+                >
+                  <p className="text-sm">{message.content}</p>
+                </div>
+                 {message.role === 'user' && (
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback><User size={18}/></AvatarFallback>
+                  </Avatar>
+                )}
+              </div>
+            ))}
+             {isPending && (
+                <div className="flex gap-3">
+                    <Avatar className="h-8 w-8">
+                        <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={18}/></AvatarFallback>
+                    </Avatar>
+                    <div className="rounded-lg px-4 py-2 bg-secondary flex items-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                </div>
+            )}
+          </div>
+        </ScrollArea>
+      </CardContent>
+      <CardFooter className="pt-4 border-t">
+        <form onSubmit={handleSubmit} className="flex w-full items-center space-x-2">
+          <Input
+            id="message"
+            placeholder="Type your legal question..."
+            className="flex-1"
+            autoComplete="off"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={isPending}
+          />
+          <Button type="submit" size="icon" disabled={isPending || !input.trim()}>
+            <Send className="h-4 w-4" />
+            <span className="sr-only">Send</span>
+          </Button>
+        </form>
+      </CardFooter>
+    </Card>
   );
 }
